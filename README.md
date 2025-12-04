@@ -29,18 +29,27 @@ This tool:
     "confidence": null
   }
 
-python3 download_transcript_formats.py "YOUTUBE_URL" --lang en
-python3 download_transcript_formats.py "YOUTUBE_URL" --lang hi
-python3 download_transcript_formats.py "YOUTUBE_URL" --lang de
+python3 download_transcript_formats.py "YOUTUBE_URL" --lang en 
+
+python3 download_transcript_formats.py "YOUTUBE_URL" --lang hi 
+
+python3 download_transcript_formats.py "YOUTUBE_URL" --lang de 
 
 
-python3 download_transcript_formats.py "YOUTUBE_URL" --format txt
-python3 download_transcript_formats.py "YOUTUBE_URL" --format json
-python3 download_transcript_formats.py "YOUTUBE_URL" --format srt
+python3 download_transcript_formats.py "YOUTUBE_URL" --format txt 
+
+python3 download_transcript_formats.py "YOUTUBE_URL" --format json 
+
+python3 download_transcript_formats.py "YOUTUBE_URL" --format srt 
+
 python3 download_transcript_formats.py "YOUTUBE_URL" --format vtt
+
 python3 download_transcript_formats.py "YOUTUBE_URL" --format csv
+
 python3 download_transcript_formats.py "YOUTUBE_URL" --format docx
+
 python3 download_transcript_formats.py "YOUTUBE_URL" --format pdf
+
 
 
 python3 download_transcript_formats.py "YOUTUBE_URL" --format json --output myfile.json
