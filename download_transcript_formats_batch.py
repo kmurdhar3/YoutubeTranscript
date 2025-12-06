@@ -42,6 +42,46 @@ def extract_video_id(url: str) -> str:
             return candidate
     raise ValueError(f"Could not extract video id from URL: {url}")
 
+
+# -------------------- Channel helpers --------------------
+def get_channel_id_from_url(channel_url: str) -> str:
+    """
+    Use yt-dlp to extract a channel ID from a given channel URL (supports @handle, /channel/, /c/ etc).
+    Returns the raw channel ID like 'UCxxxxxxxx...'
+    """
+    try:
+        from yt_dlp import YoutubeDL
+        ydl_opts = {"quiet": True, "skip_download": True, "extract_flat": True}
+        with YoutubeDL(ydl_opts) as ydl:
+            info = ydl.extract_info(channel_url, download=False)
+            # typical keys
+            cid = info.get("channel_id") or info.get("uploader_id") or info.get("id")
+            if cid:
+                return cid
+    except Exception:
+        # fallback to CLI extraction (safer)
+        try:
+            import subprocess, json, shlex
+            cmd = ["yt-dlp", "-J", "--no-warnings", channel_url]
+            p = subprocess.run(cmd, capture_output=True, text=True, check=True)
+            info = json.loads(p.stdout)
+            cid = info.get("channel_id") or info.get("uploader_id") or info.get("uploader_id") or info.get("id")
+            if cid:
+                return cid
+        except Exception as e:
+            raise RuntimeError(f"Failed to resolve channel id for {channel_url!r}: {e}")
+    raise RuntimeError(f"Could not determine channel id for {channel_url!r}")
+
+def channel_uploads_playlist_url(channel_id: str) -> str:
+    """
+    Convert a channel id (UC...) to uploads playlist id (UU...) and return playlist URL.
+    """
+    if not isinstance(channel_id, str) or not channel_id.startswith("UC") or len(channel_id) <= 2:
+        raise ValueError("Invalid channel id (expected string starting with 'UC').")
+    uploads_id = "UU" + channel_id[2:]
+    return f"https://www.youtube.com/playlist?list={uploads_id}"
+
+
 def normalize_transcript_obj(obj: Any) -> List[Dict[str, Any]]:
     def to_item_dict(it):
         d = {}
@@ -574,54 +614,71 @@ def apply_output_template(template: Optional[str], index: int, video_id: str, ti
 # --------------------------- CLI ----------------------------------------------
 
 def main():
-    parser = argparse.ArgumentParser(description="Download YouTube transcripts (single, batch, playlist)")
+    parser = argparse.ArgumentParser(description="Download YouTube transcripts (single, batch, playlist, channel)")
     parser.add_argument("url", nargs="?", help="YouTube video URL (single mode)")
     parser.add_argument("--lang", help="Language code (e.g. en)", default=None)
     parser.add_argument("--format", "-f", choices=("txt","json","srt","vtt","docx","pdf","csv"), default="json", help="output format for single mode")
     parser.add_argument("--output", "-o", help="Custom output filename for single mode", default=None)
 
     parser.add_argument("--batch", "-b", help="CSV file for batch mode (header: URL,format,outputfileName)", default=None)
-    parser.add_argument("--outdir", help="Output directory for batch/playlist mode", default="downloads")
-    parser.add_argument("--zip", action="store_true", help="Create a zip archive of outdir after batch/playlist completes")
+    parser.add_argument("--outdir", help="Output directory for batch/playlist/channel mode", default="downloads")
+    parser.add_argument("--zip", action="store_true", help="Create a zip archive of outdir after batch/playlist/channel completes")
 
     # PLAYLIST options
-    parser.add_argument("--playlist", help="YouTube playlist URL (playlist mode). Mutually exclusive with single URL and --batch", default=None)
+    parser.add_argument("--playlist", help="YouTube playlist URL (playlist mode). Mutually exclusive with single URL, --batch and --channel", default=None)
     parser.add_argument("--playlist-format", help="format to use for all playlist items (overrides --format)", default=None)
     parser.add_argument("--playlist-output-template", help="Filename template for playlist items. Use {index}, {video_id}, {title}, {ext}. Example: 'pl_{index}_{video_id}.{ext}'", default=None)
     parser.add_argument("--skip-existing", action="store_true", help="Skip downloading if target file already exists in outdir (useful for resuming large playlists)")
 
+    # CHANNEL options
+    parser.add_argument("--channel", help="YouTube channel URL or page (channel mode). Mutually exclusive with single URL and --batch and --playlist", default=None)
+    parser.add_argument("--channel-format", help="format to use for all channel uploads (overrides --format)", default=None)
+    parser.add_argument("--channel-output-template", help="Filename template for channel items. Use {index}, {video_id}, {title}, {ext}. Example: 'ch_{index}_{video_id}.{ext}'", default=None)
+
     args = parser.parse_args()
 
-    # mode selection sanity
-    mode_count = sum(bool(x) for x in (args.batch, args.playlist, args.url))
+    # pick mode
+    mode_count = sum(bool(x) for x in (args.batch, args.playlist, args.channel, args.url))
     if mode_count == 0:
         parser.print_help()
         sys.exit(1)
-    if args.batch and (args.playlist or args.url):
-        print("Error: --batch is mutually exclusive with single URL and --playlist")
+    if sum(bool(x) for x in (args.batch, args.playlist, args.channel)) > 1:
+        print("Error: --batch, --playlist and --channel are mutually exclusive")
         sys.exit(2)
     if args.playlist and args.url:
         print("Error: --playlist is mutually exclusive with single URL")
         sys.exit(2)
+    if args.channel and args.url:
+        print("Error: --channel is mutually exclusive with single URL")
+        sys.exit(2)
 
-    # PLAYLIST MODE
-    if args.playlist:
-        fmt = args.playlist_format if args.playlist_format else args.format
+    # -------------------- CHANNEL MODE --------------------
+    if args.channel:
+        fmt = args.channel_format if args.channel_format else args.format
         fmt = fmt.lower()
         if fmt not in ("txt","json","srt","vtt","docx","pdf","csv"):
-            print("Unsupported playlist format:", fmt)
+            print("Unsupported channel format:", fmt)
             sys.exit(2)
-        print("Fetching playlist videos...")
+        print("Resolving channel id for:", args.channel)
         try:
-            videos = extract_playlist_videos(args.playlist)
+            cid = get_channel_id_from_url(args.channel)
+            print("Channel ID:", cid)
+            playlist_url = channel_uploads_playlist_url(cid)
+            print("Uploads playlist URL:", playlist_url)
+        except Exception as e:
+            print("Failed to resolve channel uploads playlist:", e)
+            sys.exit(3)
+
+        # reuse playlist processing logic
+        try:
+            videos = extract_playlist_videos(playlist_url)
         except Exception as e:
             print("Failed to fetch playlist info:", e)
             sys.exit(3)
         if not videos:
-            print("No videos found in playlist.")
+            print("No videos found in channel uploads playlist.")
             sys.exit(0)
 
-        # ensure outdir
         outdir = args.outdir
         if not os.path.exists(outdir):
             os.makedirs(outdir, exist_ok=True)
@@ -631,7 +688,7 @@ def main():
             video_url = v.get("url")
             vid = v.get("id")
             title = v.get("title") or ""
-            outname = apply_output_template(args.playlist_output_template, idx, vid, title, fmt)
+            outname = apply_output_template(args.channel_output_template or args.playlist_output_template, idx, vid, title, fmt)
             target_path = os.path.join(outdir, outname)
             if args.skip_existing and os.path.exists(target_path):
                 print(f"Skipping existing: {outname}")
@@ -652,10 +709,76 @@ def main():
             with zipfile.ZipFile(zip_path, "w", compression=zipfile.ZIP_DEFLATED) as zf:
                 for f in os.listdir(outdir):
                     zf.write(os.path.join(outdir, f), arcname=f)
-            # remove directory as you requested earlier
             shutil.rmtree(outdir, ignore_errors=True)
             print("Created zip:", zip_path)
-        # summary
+
+        ok_count = sum(1 for r in results if r.get("ok"))
+        err_count = sum(1 for r in results if not r.get("ok"))
+        skipped = sum(1 for r in results if r.get("skipped"))
+        print(f"Channel finished. OK: {ok_count}, ERR: {err_count}, SKIPPED: {skipped}")
+        if zip_path:
+            print("Zip:", zip_path)
+        sys.exit(0)
+
+    # -------------------- PLAYLIST MODE --------------------
+       # -------------------- PLAYLIST MODE --------------------
+    if args.playlist:
+        fmt = args.playlist_format if getattr(args, "playlist_format", None) else args.format
+        fmt = (fmt or "json").lower()
+        if fmt not in ("txt","json","srt","vtt","docx","pdf","csv"):
+            print("Unsupported playlist format:", fmt)
+            sys.exit(2)
+
+        print("Fetching playlist videos for:", args.playlist)
+        try:
+            videos = extract_playlist_videos(args.playlist)
+        except Exception as e:
+            print("Failed to fetch playlist info:", e)
+            sys.exit(3)
+
+        if not videos:
+            print("No videos found in playlist.")
+            sys.exit(0)
+
+        # Ensure output directory
+        outdir = args.outdir or "downloads"
+        os.makedirs(outdir, exist_ok=True)
+
+        results = []
+        total = len(videos)
+        for idx, v in enumerate(videos, start=1):
+            video_url = v.get("url")
+            vid = v.get("id")
+            title = v.get("title") or ""
+            # Select output name using template if provided
+            outname = apply_output_template(getattr(args, "playlist_output_template", None), idx, vid, title, fmt)
+            target_path = os.path.join(outdir, outname)
+
+            if getattr(args, "skip_existing", False) and os.path.exists(target_path):
+                print(f"[{idx}/{total}] Skipping existing: {outname}")
+                results.append({"ok": True, "path": target_path, "skipped": True, "url": video_url})
+                continue
+
+            print(f"[{idx}/{total}] Processing: {title or vid} -> {outname}")
+            res = process_row(video_url, fmt, outname, outdir, args.lang)
+            if res.get("ok"):
+                print("  OK:", res.get("path"))
+            else:
+                print("  ERROR:", res.get("error"))
+            results.append(res)
+
+        zip_path = None
+        if args.zip:
+            zip_path = outdir.rstrip("/\\") + ".zip"
+            import zipfile, shutil
+            with zipfile.ZipFile(zip_path, "w", compression=zipfile.ZIP_DEFLATED) as zf:
+                for f in os.listdir(outdir):
+                    zf.write(os.path.join(outdir, f), arcname=f)
+            # remove the output directory (you requested ZIP-only)
+            shutil.rmtree(outdir, ignore_errors=True)
+            print("Created zip:", zip_path)
+            print("Removed directory:", outdir)
+
         ok_count = sum(1 for r in results if r.get("ok"))
         err_count = sum(1 for r in results if not r.get("ok"))
         skipped = sum(1 for r in results if r.get("skipped"))
@@ -664,7 +787,7 @@ def main():
             print("Zip:", zip_path)
         sys.exit(0)
 
-    # BATCH MODE (existing behavior)
+    # -------------------- BATCH MODE --------------------
     if args.batch:
         if not os.path.exists(args.batch):
             print("Batch CSV not found:", args.batch)
@@ -678,7 +801,7 @@ def main():
             print("Zip:", report.get("zip"))
         sys.exit(0)
 
-    # SINGLE MODE (existing)
+    # -------------------- SINGLE MODE --------------------
     if args.url:
         print("Fetching transcript for single URL...")
         items = download_transcript(args.url, prefer_lang=args.lang)

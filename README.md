@@ -1,3 +1,21 @@
+# TO run locally  
+# Create virtual environment
+python3 -m venv myenv
+
+# Activate it
+source myenv/bin/activate
+
+# Install the package
+pip install youtube-transcript-api
+
+# Now run your script
+python your_script.py
+
+# When done
+deactivate
+
+
+
 # YouTube Transcript Downloader (JSON / TXT)
 
 A powerful, reliable Python CLI tool that downloads transcripts from any YouTube URL and saves them in **JSON** or **TXT** format.
@@ -29,27 +47,18 @@ This tool:
     "confidence": null
   }
 
-python3 download_transcript_formats.py "YOUTUBE_URL" --lang en 
-
-python3 download_transcript_formats.py "YOUTUBE_URL" --lang hi 
-
-python3 download_transcript_formats.py "YOUTUBE_URL" --lang de 
+python3 download_transcript_formats.py "YOUTUBE_URL" --lang en
+python3 download_transcript_formats.py "YOUTUBE_URL" --lang hi
+python3 download_transcript_formats.py "YOUTUBE_URL" --lang de
 
 
-python3 download_transcript_formats.py "YOUTUBE_URL" --format txt 
-
-python3 download_transcript_formats.py "YOUTUBE_URL" --format json 
-
-python3 download_transcript_formats.py "YOUTUBE_URL" --format srt 
-
+python3 download_transcript_formats.py "YOUTUBE_URL" --format txt
+python3 download_transcript_formats.py "YOUTUBE_URL" --format json
+python3 download_transcript_formats.py "YOUTUBE_URL" --format srt
 python3 download_transcript_formats.py "YOUTUBE_URL" --format vtt
-
 python3 download_transcript_formats.py "YOUTUBE_URL" --format csv
-
 python3 download_transcript_formats.py "YOUTUBE_URL" --format docx
-
 python3 download_transcript_formats.py "YOUTUBE_URL" --format pdf
-
 
 
 python3 download_transcript_formats.py "YOUTUBE_URL" --format json --output myfile.json
@@ -67,8 +76,22 @@ python3 download_transcript_formats.py \
 python3 download_transcript_formats.py --batch jobs.csv --outdir transcripts_out --zip
 
 
-Your .csv should look like:
+# Your .csv should look like:
 URL,format,outputfileName
 https://youtu.be/abcd1234,json,podcast.json
 https://youtube.com/watch?v=XYZ789,srt,episode1.srt
 https://youtu.be/AABBCCDD,pdf,meeting.pdf
+
+
+
+
+# For playlist :- 
+
+python3 download_transcript_formats_batch.py --playlist "https://www.youtube.com/playlist?list=UUuFd70DajDd28t5eLHDchWw" --playlist-format json --lang 'en' --outdir pl_outputs --zip
+
+Note: This tool extracts information from public YouTube channels only.
+
+
+## Furture enhancement 
+1) Able to download the transcript where the CC/Transcript is not available.
+2) Able to download the playlist transcript in zip.
